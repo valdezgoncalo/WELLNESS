@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cargas &amp; Bem-Estar</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0F1E18">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cargas">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+/* ====== CONFIGURAÇÃO SUPABASE — preenche estes dois valores ======
+   1. Cria um projeto gratuito em https://supabase.com
+   2. Vai a Project Settings → API
+   3. Copia o "Project URL" para SUPABASE_URL
+   4. Copia a chave "anon public" para SUPABASE_ANON_KEY
+   5. Corre o script SQL fornecido (schema.sql) no SQL Editor do Supabase
+   =================================================================== */
+window.SUPABASE_URL = 'COLA_AQUI_O_TEU_PROJECT_URL';
+window.SUPABASE_ANON_KEY = 'COLA_AQUI_A_TUA_ANON_KEY';
+</script>
+<style>
+:root{
+  --bg:#0F1E18; --surface:#182C24; --surface-2:#20372C; --line:#2C4A3C;
+  --ink:#F2EEE3; --ink-dim:#9FB3A6; --ink-faint:#6C8378;
+  --amber:#E8A33D; --teal:#4FA6A0; --coral:#D8574A; --ok:#7FBF7F; --blue:#7C9CC4; --purple:#B98BC9;
+  --font-head:'Space Grotesk',sans-serif; --font-body:'IBM Plex Sans',sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root:not([data-theme="dark"]){
+  @media (prefers-color-scheme: light){
+    --bg:#F4F1E9; --surface:#FFFFFF; --surface-2:#EDE8DA; --line:#DDD5C2;
+    --ink:#182A22; --ink-dim:#4B5F53; --ink-faint:#8A9A8F;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#F4F1E9; --surface:#FFFFFF; --surface-2:#EDE8DA; --line:#DDD5C2;
+  --ink:#182A22; --ink-dim:#4B5F53; --ink-faint:#8A9A8F;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html{scroll-padding-top:env(safe-area-inset-top,0px); height:100%;}
+body{
+  height:100%; background:var(--bg); color:var(--ink); font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.num{font-family:var(--font-head);}
+button{font-family:var(--font-body); cursor:pointer;}
+input,select,textarea{font-family:var(--font-body);}
+::selection{background:var(--amber); color:#10201A;}
+
+.app{min-height:100%; display:flex; flex-direction:column;}
+
+/* ---------- Ecrã inicial ---------- */
+#gate{
+  min-height:100%; display:flex; align-items:center; justify-content:center; padding:32px 20px;
+}
+.gate-card{
+  max-width:420px; width:100%; background:var(--surface); border:1px solid var(--line);
+  border-radius:4px; padding:36px 30px;
+}
+.gate-mark{width:34px; height:6px; background:var(--amber); border-radius:2px; margin-bottom:22px;}
+.gate-card h1{font-size:26px; line-height:1.25; margin-bottom:10px; font-weight:600;}
+.gate-card p{color:var(--ink-dim); font-size:14.5px; margin-bottom:26px; line-height:1.55;}
+.field{margin-bottom:16px;}
+.field label{display:block; font-size:12.5px; color:var(--ink-dim); margin-bottom:6px;}
+.field input, .field select{
+  width:100%; padding:11px 12px; background:var(--surface-2); border:1px solid var(--line);
+  border-radius:3px; color:var(--ink); font-size:15px;
+}
+.role-pick{display:flex; gap:10px; margin-bottom:22px;}
+.role-btn{
+  flex:1; padding:16px 10px; background:var(--surface-2); border:1px solid var(--line);
+  border-radius:3px; color:var(--ink); font-size:14px; font-weight:600; text-align:left;
+  transition:border-color .15s;
+}
+.role-btn small{display:block; font-weight:400; color:var(--ink-faint); font-size:12px; margin-top:3px;}
+.role-btn.active{border-color:var(--amber); box-shadow:inset 0 0 0 1px var(--amber);}
+.btn-primary{
+  width:100%; padding:13px; background:var(--amber); border:none; border-radius:3px;
+  color:#10201A; font-weight:600; font-size:15px;
+}
+.btn-primary:disabled{opacity:.4;}
+.hidden{display:none !important;}
+
+/* ---------- Layout principal ---------- */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:14px 20px; padding-top:calc(14px + env(safe-area-inset-top,0px));
+  border-bottom:1px solid var(--line); background:var(--surface); position:sticky; top:0; z-index:5;
+}
+.topbar-left{display:flex; align-items:center; gap:10px;}
+.topbar-left .gate-mark{margin:0; width:22px;}
+.club-name{font-family:var(--font-head); font-weight:600; font-size:15px;}
+.who{font-size:12px; color:var(--ink-faint);}
+.topbar-right{display:flex; align-items:center; gap:10px;}
+.exit{background:none; border:1px solid var(--line); color:var(--ink-dim); padding:7px 12px; border-radius:3px; font-size:12.5px;}
+.bell-btn{position:relative; background:none; border:1px solid var(--line); color:var(--ink-dim); padding:7px 10px; border-radius:3px; font-size:14px;}
+.bell-badge{position:absolute; top:-6px; right:-6px; background:var(--coral); color:#fff; font-size:10px; font-weight:700; min-width:16px; height:16px; border-radius:8px; display:flex; align-items:center; justify-content:center; padding:0 3px;}
+
+.tabs{
+  display:flex; gap:4px; padding:10px 16px; overflow-x:auto; border-bottom:1px solid var(--line);
+  background:var(--surface); position:sticky; top:57px; z-index:4;
+}
+.tab{
+  padding:8px 14px; border-radius:20px; border:1px solid transparent; background:none;
+  color:var(--ink-dim); font-size:13.5px; font-weight:500; white-space:nowrap;
+}
+.tab.active{background:var(--surface-2); border-color:var(--line); color:var(--ink);}
+
+main{flex:1; padding:20px 16px 60px; max-width:1080px; width:100%; margin:0 auto;}
+.section{display:none;}
+.section.active{display:block;}
+.section-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:16px; gap:10px; flex-wrap:wrap;}
+.section-head h2{font-size:20px; font-weight:600;}
+.section-head p{color:var(--ink-faint); font-size:13px;}
+
+/* ---------- Cartões ---------- */
+.grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px;}
+.card{background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:16px;}
+.athlete-card{cursor:pointer; position:relative; padding-left:18px;}
+.athlete-card::before{content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--flag,var(--ink-faint)); border-radius:4px 0 0 4px;}
+.athlete-card h3{font-size:15.5px; font-weight:600; margin-bottom:2px; display:flex; align-items:center; gap:6px;}
+.athlete-card .pos{font-size:12px; color:var(--ink-faint); margin-bottom:12px;}
+.stat-row{display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-dim); margin-bottom:4px;}
+.stat-row .num{color:var(--ink); font-weight:600;}
+.flag-label{display:inline-block; margin-top:10px; font-size:11px; padding:3px 8px; border-radius:20px; background:var(--surface-2); color:var(--flag,var(--ink-dim)); font-weight:600;}
+.flag-reason{font-size:11.5px; color:var(--ink-faint); margin-top:6px; line-height:1.4;}
+.pain-dot{width:8px; height:8px; border-radius:50%; background:var(--coral); display:inline-block;}
+
+.kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:20px;}
+.kpi{background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:14px 16px;}
+.kpi .num{font-size:26px; font-weight:600;}
+.kpi .lbl{font-size:12px; color:var(--ink-faint); margin-top:2px;}
+
+/* ---------- Formulários ---------- */
+.form-card{background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:20px; max-width:520px;}
+.form-row{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.scale{display:flex; gap:6px; margin-top:6px;}
+.scale button{
+  flex:1; padding:10px 0; border-radius:3px; border:1px solid var(--line); background:var(--surface-2);
+  color:var(--ink-dim); font-weight:600; font-size:14px;
+}
+.scale button.sel{background:var(--teal); border-color:var(--teal); color:#0F1E18;}
+.scale-labels{display:flex; justify-content:space-between; font-size:10.5px; color:var(--ink-faint); margin-top:4px;}
+.rpe-scale{display:grid; grid-template-columns:repeat(11,1fr); gap:4px; margin-top:6px;}
+.rpe-scale button{padding:9px 0; font-size:12px;}
+
+.btn-row{display:flex; gap:10px; margin-top:18px;}
+.btn-sec{background:none; border:1px solid var(--line); color:var(--ink-dim); padding:11px 16px; border-radius:3px; font-size:13.5px;}
+.btn-danger{color:var(--coral); border-color:var(--coral);}
+
+table{width:100%; border-collapse:collapse; font-size:13px;}
+th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--line);}
+th{color:var(--ink-faint); font-weight:500; font-size:11.5px; text-transform:uppercase; letter-spacing:.02em;}
+
+.chart-box{background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:16px; margin-bottom:14px;}
+.chart-box h3{font-size:13.5px; font-weight:600; margin-bottom:12px; color:var(--ink-dim);}
+canvas{max-height:220px;}
+
+.empty{color:var(--ink-faint); font-size:14px; padding:30px 0; text-align:center;}
+.back-link{color:var(--ink-dim); font-size:13px; margin-bottom:14px; display:inline-flex; align-items:center; gap:5px; background:none; border:none;}
+
+.plan-day{display:grid; grid-template-columns:70px 1fr 90px 90px 90px; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px;}
+.plan-day:last-child{border-bottom:none;}
+.plan-day select, .plan-day input{padding:7px 8px; background:var(--surface-2); border:1px solid var(--line); border-radius:3px; color:var(--ink); font-size:12.5px;}
+.plan-head{font-size:10.5px; color:var(--ink-faint); text-transform:uppercase;}
+.bar-wrap{height:8px; background:var(--surface-2); border-radius:4px; overflow:hidden; margin-top:8px;}
+.bar-fill{height:100%; background:var(--teal);}
+.plan-toolbar{display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;}
+.badge-custom{font-size:11px; background:var(--surface-2); border:1px solid var(--amber); color:var(--amber); padding:3px 8px; border-radius:20px;}
+
+/* ---------- Mapa corporal ---------- */
+.bodymap-wrap{display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; margin-top:8px;}
+.bodymap-wrap svg{background:var(--surface-2); border-radius:6px; border:1px solid var(--line);}
+.bodymap-wrap svg circle{cursor:pointer; stroke:var(--line); stroke-width:1.5; transition:fill .15s;}
+.pain-list{flex:1; min-width:160px;}
+.pain-chip{display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--surface-2); border:1px solid var(--line); border-radius:3px; padding:6px 10px; margin-bottom:6px; font-size:12.5px;}
+.pain-chip button{background:none; border:none; color:var(--ink-faint); font-size:13px;}
+.pain-legend{display:flex; gap:10px; font-size:11px; color:var(--ink-faint); margin-top:8px; flex-wrap:wrap;}
+.pain-legend span{display:inline-flex; align-items:center; gap:4px;}
+.pain-legend i{width:9px; height:9px; border-radius:50%; display:inline-block;}
+.lombar-pill{margin-top:10px; padding:8px 12px; border-radius:20px; border:1px solid var(--line); background:var(--surface-2); font-size:12.5px; display:inline-block;}
+
+/* ---------- Alertas ---------- */
+.alert-item{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--coral); border-radius:4px; padding:12px 14px; margin-bottom:10px;}
+.alert-item.read{opacity:.55; border-left-color:var(--ink-faint);}
+.alert-item .a-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;}
+.alert-item .a-name{font-weight:600; font-size:14px;}
+.alert-item .a-date{font-size:11.5px; color:var(--ink-faint);}
+.alert-item .a-reason{font-size:12.5px; color:var(--ink-dim); line-height:1.5;}
+.alert-item .a-actions{margin-top:8px;}
+.notify-note{background:var(--surface-2); border:1px solid var(--line); border-radius:4px; padding:12px 14px; font-size:12.5px; color:var(--ink-dim); margin-bottom:16px; line-height:1.5;}
+
+@media(max-width:560px){
+  .form-row{grid-template-columns:1fr;}
+  .plan-day{grid-template-columns:50px 1fr 70px 70px 70px; font-size:11.5px;}
+  .bodymap-wrap{flex-direction:column;}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ECRÃ INICIAL -->
+  <div id="gate">
+    <div class="gate-card">
+      <div class="gate-mark"></div>
+      <h1 id="gateTitle">Cargas &amp; Bem-Estar</h1>
+      <p id="gateSub">Monitorização de saúde, esforço e carga de treino para o clube.</p>
+
+      <div id="setupClub" class="hidden">
+        <div class="field"><label>Nome do clube / equipa</label><input id="clubNameInput" placeholder="Ex: FC Valdez"></div>
+        <button class="btn-primary" onclick="saveClubName()">Continuar</button>
+      </div>
+
+      <div id="roleSelect">
+        <div class="role-pick">
+          <button class="role-btn" id="btnRoleStaff" onclick="pickRole('staff')">Staff técnico<small>Gerir, planear, acompanhar</small></button>
+          <button class="role-btn" id="btnRoleAtleta" onclick="pickRole('atleta')">Atleta<small>Registar bem-estar e RPE</small></button>
+        </div>
+        <div id="athletePickWrap" class="hidden field">
+          <label>Quem és tu?</label>
+          <select id="athletePick"></select>
+        </div>
+        <div id="pinWrap" class="hidden field">
+          <label>PIN (4 dígitos)</label>
+          <input id="pinInput" type="tel" inputmode="numeric" maxlength="4" placeholder="••••">
+          <div id="pinError" class="hidden" style="color:var(--coral); font-size:12px; margin-top:6px;">PIN incorreto. Pede o PIN ao staff.</div>
+        </div>
+        <button class="btn-primary" id="enterBtn" disabled onclick="enterApp()">Entrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="mainApp" class="hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="gate-mark"></div>
+        <div><div class="club-name" id="clubNameTop"></div><div class="who" id="whoTop"></div></div>
+      </div>
+      <div class="topbar-right">
+        <button class="bell-btn hidden" id="bellBtn" onclick="switchSection('alerts')">&#128276;<span class="bell-badge hidden" id="bellBadge">0</span></button>
+        <button class="exit" onclick="exitApp()">Trocar utilizador</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="tabsStaff">
+      <button class="tab" data-sec="overview">Visão geral</button>
+      <button class="tab" data-sec="athletes">Atletas</button>
+      <button class="tab" data-sec="planning">Planeamento</button>
+      <button class="tab" data-sec="alerts">Alertas</button>
+    </div>
+    <div class="tabs hidden" id="tabsAtleta">
+      <button class="tab" data-sec="checkin">Bem-estar</button>
+      <button class="tab" data-sec="rpe">Sessão (RPE)</button>
+      <button class="tab" data-sec="myhistory">O meu historial</button>
+    </div>
+
+    <main>
+      <!-- STAFF: VISÃO GERAL -->
+      <section class="section" id="sec-overview">
+        <div class="section-head"><div><h2>Visão geral</h2><p>Estado atual do plantel</p></div></div>
+        <div class="kpis" id="overviewKpis"></div>
+        <div class="grid" id="athleteCards"></div>
+      </section>
+
+      <!-- STAFF: ATLETAS -->
+      <section class="section" id="sec-athletes">
+        <div id="athletesList">
+          <div class="section-head"><div><h2>Atletas</h2><p>Gerir o plantel</p></div></div>
+          <div class="form-card" style="margin-bottom:20px;">
+            <div class="form-row">
+              <div class="field"><label>Nome</label><input id="newAthName" placeholder="Nome do atleta"></div>
+              <div class="field"><label>Posição</label><input id="newAthPos" placeholder="Ex: Médio"></div>
+            </div>
+            <button class="btn-primary" onclick="addAthlete()">Adicionar atleta</button>
+          </div>
+          <table id="athletesTable">
+            <thead><tr><th>Nome</th><th>Posição</th><th>PIN</th><th>Carga vs. habitual</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="athleteDetail" class="hidden"></div>
+      </section>
+
+      <!-- STAFF: PLANEAMENTO -->
+      <section class="section" id="sec-planning">
+        <div class="section-head"><div><h2>Planeamento semanal</h2><p>Define a carga planeada e compara com a carga real registada</p></div></div>
+        <div class="plan-toolbar">
+          <div class="field" style="margin:0; min-width:220px;">
+            <label>Aplicar plano a</label>
+            <select id="planScopeSelect" onchange="changePlanScope(this.value)">
+              <option value="team">Equipa (todos)</option>
+            </select>
+          </div>
+          <span class="badge-custom hidden" id="customBadge">Plano individual personalizado</span>
+          <button class="btn-sec hidden" id="removeCustomBtn" onclick="removeIndividualPlan()">Remover personalização</button>
+        </div>
+        <div class="form-card" style="max-width:100%;">
+          <div class="plan-day plan-head">
+            <div>Dia</div><div>Categoria</div><div>Duração (min)</div><div>RPE alvo</div><div>Carga (AU)</div>
+          </div>
+          <div id="planDays"></div>
+          <div class="btn-row"><button class="btn-primary" style="width:auto;" onclick="savePlan()">Guardar plano</button></div>
+        </div>
+        <div class="chart-box" style="margin-top:16px;">
+          <h3 id="planChartTitle">Carga planeada vs. carga real — esta semana</h3>
+          <canvas id="planChart"></canvas>
+        </div>
+      </section>
+
+      <!-- STAFF: ALERTAS -->
+      <section class="section" id="sec-alerts">
+        <div class="section-head"><div><h2>Alertas</h2><p>Atletas sinalizados em risco elevado, com o motivo</p></div></div>
+        <div class="notify-note">As notificações funcionam apenas enquanto esta app está aberta no teu dispositivo (não há notificações push reais sem servidor). Confirma a permissão do navegador se quiseres o aviso do sistema.</div>
+        <div id="alertsWrap"></div>
+      </section>
+
+      <!-- ATLETA: CHECK-IN BEM-ESTAR -->
+      <section class="section" id="sec-checkin">
+        <div class="section-head"><div><h2>Questionário diário</h2><p id="checkinDateLabel"></p></div></div>
+        <div class="form-card" id="checkinForm" style="max-width:560px;"></div>
+      </section>
+
+      <!-- ATLETA: RPE -->
+      <section class="section" id="sec-rpe">
+        <div class="section-head"><div><h2>Registar sessão</h2><p>Perceção de esforço (RPE) após o treino ou jogo</p></div></div>
+        <div class="form-card">
+          <div class="field"><label>Duração (minutos)</label><input id="sessDuration" type="number" min="1" placeholder="Ex: 75"></div>
+          <div class="field">
+            <label>RPE — quão intensa foi a sessão? (0–10)</label>
+            <div class="rpe-scale" id="rpeScale"></div>
+            <div class="scale-labels"><span>0 · muito leve</span><span>10 · máximo</span></div>
+          </div>
+          <button class="btn-primary" style="margin-top:16px;" onclick="submitRpe()">Guardar sessão</button>
+        </div>
+      </section>
+
+      <!-- ATLETA: HISTORIAL -->
+      <section class="section" id="sec-myhistory">
+        <div class="section-head"><div><h2>O meu historial</h2><p>Carga e bem-estar recentes</p></div></div>
+        <div class="chart-box"><h3>Carga diária — últimos 21 dias</h3><canvas id="myLoadChart"></canvas></div>
+        <div class="chart-box"><h3>Bem-estar diário (quanto mais alto, melhor)</h3><canvas id="myWellChart"></canvas></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+/* ================= ESTADO E PERSISTÊNCIA ================= */
+let sb = null;               // cliente Supabase
+let cloudReady = false;
+let cloudUnavailable = false;
+let currentSection = null;
+let currentAthleteId = null;
+// cache local — alimentada pelas funções refreshX() abaixo, nunca por localStorage
+let db = { clubName:'', athletes:[], checkins:[], sessions:[], plan:{}, planIndividual:{}, alerts:[] };
+let session = { role:null, athleteId:null };
+let charts = {};
+let planScope = 'team';
+
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+async function initCloud(){
+  if(!window.supabase || !window.SUPABASE_URL || window.SUPABASE_URL.startsWith('COLA_AQUI')){
+    cloudUnavailable = true;
+    document.getElementById('gateSub').textContent = 'Falta configurar a ligação ao Supabase. Abre o ficheiro HTML num editor de texto e preenche SUPABASE_URL e SUPABASE_ANON_KEY no topo do <head>, depois recarrega a página.';
+    return;
+  }
+  if(window.SUPABASE_URL.includes('/rest/v1')){
+    cloudUnavailable = true;
+    document.getElementById('gateSub').textContent = 'O SUPABASE_URL está errado: tem "/rest/v1/" no fim. Usa só o Project URL, por exemplo "https://xxxxx.supabase.co" (sem mais nada a seguir), e recarrega a página.';
+    return;
+  }
+  try{
+    sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+    await Promise.all([refreshMeta(), refreshAthletes(), refreshCheckins(), refreshSessions(), refreshAlerts(), refreshPlan()]);
+    cloudReady = true;
+    refreshGate();
+    subscribeRealtime();
+  }catch(e){
+    cloudUnavailable = true;
+    document.getElementById('gateSub').textContent = 'Não foi possível ligar ao Supabase. Confirma o URL, a chave e se correste o schema.sql. Detalhe: '+(e.message||e);
+  }
+}
+function subscribeRealtime(){
+  sb.channel('db-changes')
+    .on('postgres_changes',{event:'*',schema:'public',table:'meta'}, ()=>refreshMeta().then(rerenderAfterSync))
+    .on('postgres_changes',{event:'*',schema:'public',table:'athletes'}, ()=>refreshAthletes().then(rerenderAfterSync))
+    .on('postgres_changes',{event:'*',schema:'public',table:'checkins'}, ()=>refreshCheckins().then(rerenderAfterSync))
+    .on('postgres_changes',{event:'*',schema:'public',table:'sessions'}, ()=>refreshSessions().then(rerenderAfterSync))
+    .on('postgres_changes',{event:'*',schema:'public',table:'alerts'}, ()=>refreshAlerts().then(rerenderAfterSync))
+    .on('postgres_changes',{event:'*',schema:'public',table:'plans'}, ()=>refreshPlan().then(rerenderAfterSync))
+    .subscribe();
+}
+async function refreshMeta(){
+  const {data} = await sb.from('meta').select('*').eq('id','main').maybeSingle();
+  db.clubName = data ? (data.club_name||'') : '';
+}
+async function refreshAthletes(){
+  const {data} = await sb.from('athletes').select('*').order('created_at');
+  db.athletes = (data||[]).map(r=>({id:r.id, name:r.name, pos:r.pos, pin:r.pin}));
+}
+async function refreshCheckins(){
+  const {data} = await sb.from('checkins').select('*');
+  db.checkins = (data||[]).map(r=>({athleteId:r.athlete_id, date:r.date, sleep:r.sleep, fatigue:r.fatigue, soreness:r.soreness, stress:r.stress, mood:r.mood, painAreas:r.pain_areas||{}}));
+}
+async function refreshSessions(){
+  const {data} = await sb.from('sessions').select('*');
+  db.sessions = (data||[]).map(r=>({id:r.id, athleteId:r.athlete_id, date:r.date, category:r.category, duration:r.duration, rpe:r.rpe, load:r.load}));
+}
+async function refreshAlerts(){
+  const {data} = await sb.from('alerts').select('*');
+  db.alerts = (data||[]).map(r=>({id:r.id, athleteId:r.athlete_id, date:r.date, reason:r.reason, read:r.read}));
+}
+async function refreshPlan(){
+  const key = isoWeekKey();
+  const {data} = await sb.from('plans').select('*').eq('week_key', key).maybeSingle();
+  db.plan[key] = (data && data.team) || defaultDays();
+  db.planIndividual[key] = (data && data.individual) || {};
+}
+function rerenderAfterSync(){
+  if(document.getElementById('mainApp').classList.contains('hidden')){
+    if(session.role==='atleta') refreshAthletePickList();
+    return;
+  }
+  if(currentSection) renderSection(currentSection);
+  if(session.role==='staff') updateAlertBadge();
+}
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function isoWeekKey(d=new Date()){
+  const date = new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const day = date.getUTCDay()||7;
+  date.setUTCDate(date.getUTCDate()+4-day);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+  const week = Math.ceil((((date-yearStart)/86400000)+1)/7);
+  return date.getUTCFullYear()+'-W'+week;
+}
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ================= CATEGORIAS DE CARGA ================= */
+const CATEGORIES = ['Recuperação','Técnico-tático','Físico','Ginásio','Jogo'];
+const PLAN_CATS = ['Descanso', ...CATEGORIES];
+const CATEGORY_RPE = {'Descanso':0,'Recuperação':2,'Técnico-tático':4,'Físico':6,'Ginásio':5,'Jogo':8};
+const CAT_COLORS = {'Recuperação':'#4FA6A0','Técnico-tático':'#7C9CC4','Físico':'#E8A33D','Ginásio':'#B98BC9','Jogo':'#D8574A','Descanso':'#6C8378'};
+
+/* ================= GATE / LOGIN ================= */
+function refreshGate(){
+  if(cloudUnavailable) return;
+  if(!cloudReady){
+    document.getElementById('setupClub').classList.add('hidden');
+    document.getElementById('roleSelect').classList.add('hidden');
+    document.getElementById('gateSub').textContent = 'A ligar…';
+    return;
+  }
+  if(!db.clubName){
+    document.getElementById('setupClub').classList.remove('hidden');
+    document.getElementById('roleSelect').classList.add('hidden');
+    document.getElementById('gateSub').textContent = 'Primeiro, dá um nome ao teu clube ou equipa.';
+  } else {
+    document.getElementById('setupClub').classList.add('hidden');
+    document.getElementById('roleSelect').classList.remove('hidden');
+    document.getElementById('gateSub').textContent = db.clubName+' — escolhe como queres entrar.';
+  }
+}
+async function saveClubName(){
+  const v = document.getElementById('clubNameInput').value.trim();
+  if(!v || !sb) return;
+  try{
+    const {error} = await sb.from('meta').upsert({id:'main', club_name:v});
+    if(error) throw error;
+    await refreshMeta(); refreshGate();
+  }catch(e){ alert('Erro ao guardar o clube: '+(e.message||e)); }
+}
+function pickRole(role){
+  session.role = role;
+  document.getElementById('btnRoleStaff').classList.toggle('active', role==='staff');
+  document.getElementById('btnRoleAtleta').classList.toggle('active', role==='atleta');
+  const wrap = document.getElementById('athletePickWrap');
+  const pinWrap = document.getElementById('pinWrap');
+  const enter = document.getElementById('enterBtn');
+  if(role==='atleta'){
+    wrap.classList.remove('hidden');
+    pinWrap.classList.remove('hidden');
+    document.getElementById('pinError').classList.add('hidden');
+    document.getElementById('pinInput').value = '';
+    refreshAthletePickList();
+    document.getElementById('athletePick').onchange = (e)=>{ session.athleteId = e.target.value; document.getElementById('pinError').classList.add('hidden'); };
+  } else {
+    wrap.classList.add('hidden');
+    pinWrap.classList.add('hidden');
+    enter.disabled = false;
+  }
+}
+function refreshAthletePickList(){
+  const sel = document.getElementById('athletePick');
+  if(!sel || session.role!=='atleta') return;
+  const cur = sel.value || session.athleteId;
+  sel.innerHTML = db.athletes.length
+    ? db.athletes.map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')
+    : '<option value="">Nenhum atleta registado ainda</option>';
+  const keep = db.athletes.find(a=>a.id===cur);
+  sel.value = keep ? cur : (db.athletes[0] ? db.athletes[0].id : '');
+  session.athleteId = sel.value || null;
+  document.getElementById('enterBtn').disabled = db.athletes.length===0;
+}
+function enterApp(){
+  if(session.role==='atleta'){
+    const a = db.athletes.find(x=>x.id===session.athleteId);
+    const entered = document.getElementById('pinInput').value.trim();
+    if(a && a.pin && a.pin !== entered){
+      document.getElementById('pinError').classList.remove('hidden');
+      return;
+    }
+    document.getElementById('pinError').classList.add('hidden');
+  }
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('mainApp').classList.remove('hidden');
+  document.getElementById('clubNameTop').textContent = db.clubName;
+  if(session.role==='staff'){
+    document.getElementById('whoTop').textContent = 'Staff técnico';
+    document.getElementById('tabsStaff').classList.remove('hidden');
+    document.getElementById('tabsAtleta').classList.add('hidden');
+    document.getElementById('bellBtn').classList.remove('hidden');
+    requestNotifyPermission();
+    switchSection('overview');
+  } else {
+    const a = db.athletes.find(x=>x.id===session.athleteId);
+    document.getElementById('whoTop').textContent = a ? a.name : 'Atleta';
+    document.getElementById('tabsAtleta').classList.remove('hidden');
+    document.getElementById('tabsStaff').classList.add('hidden');
+    document.getElementById('bellBtn').classList.add('hidden');
+    switchSection('checkin');
+    renderCheckin(); renderRpeScale(); renderMyHistory();
+  }
+}
+function exitApp(){
+  document.getElementById('mainApp').classList.add('hidden');
+  document.getElementById('gate').classList.remove('hidden');
+  session = {role:null, athleteId:null};
+}
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click', ()=>switchSection(t.dataset.sec));
+});
+function switchSection(name){
+  currentSection = name;
+  if(name==='athletes') currentAthleteId = null;
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.sec===name));
+  const sec = document.getElementById('sec-'+name);
+  if(sec) sec.classList.add('active');
+  renderSection(name);
+}
+function renderSection(name){
+  if(name==='overview') renderOverview();
+  if(name==='athletes'){
+    if(currentAthleteId){ openAthlete(currentAthleteId, true); }
+    else { document.getElementById('athletesList').classList.remove('hidden'); document.getElementById('athleteDetail').classList.add('hidden'); renderAthletesTable(); }
+  }
+  if(name==='planning') renderPlanning();
+  if(name==='alerts'){ checkAndLogAlerts(); renderAlerts(); updateAlertBadge(); }
+  if(name==='myhistory') renderMyHistory();
+}
+
+/* ================= CÁLCULOS DE CARGA ================= */
+function sessionsFor(athleteId){ return db.sessions.filter(s=>s.athleteId===athleteId).sort((a,b)=>a.date.localeCompare(b.date)); }
+function checkinsFor(athleteId){ return db.checkins.filter(c=>c.athleteId===athleteId).sort((a,b)=>a.date.localeCompare(b.date)); }
+
+function dailyLoadMap(athleteId){
+  const map = {};
+  sessionsFor(athleteId).forEach(s=>{ map[s.date] = (map[s.date]||0) + s.load; });
+  return map;
+}
+function dailyLoadByCategory(athleteId){
+  const map = {};
+  sessionsFor(athleteId).forEach(s=>{
+    if(!map[s.date]) map[s.date]={};
+    map[s.date][s.category] = (map[s.date][s.category]||0) + s.load;
+  });
+  return map;
+}
+function loadInWindow(athleteId, days){
+  const map = dailyLoadMap(athleteId);
+  const now = new Date();
+  let total = 0, vals = [];
+  for(let i=0;i<days;i++){
+    const d = new Date(now); d.setDate(d.getDate()-i);
+    const key = d.toISOString().slice(0,10);
+    const v = map[key]||0;
+    total += v; vals.push(v);
+  }
+  return {total, vals};
+}
+function stdDev(arr){
+  const m = arr.reduce((a,b)=>a+b,0)/arr.length;
+  const variance = arr.reduce((a,b)=>a+Math.pow(b-m,2),0)/arr.length;
+  return Math.sqrt(variance);
+}
+function sleepStreakLow(athleteId){
+  const ci = checkinsFor(athleteId).slice(-3);
+  if(ci.length<3) return false;
+  return ci.every(c=>c.sleep<=2);
+}
+const ZONE_LABELS = {
+  cabeca:'Cabeça/pescoço', ombro_e:'Ombro esquerdo', ombro_d:'Ombro direito', peito:'Peito/tronco',
+  anca:'Anca/virilha', coxa_e:'Coxa esquerda', coxa_d:'Coxa direita', joelho_e:'Joelho esquerdo',
+  joelho_d:'Joelho direito', gemeo_e:'Gémeo esquerdo', gemeo_d:'Gémeo direito',
+  tornozelo_e:'Tornozelo/pé esquerdo', tornozelo_d:'Tornozelo/pé direito', lombar:'Zona lombar/costas'
+};
+function strongPainToday(athleteId){
+  const ci = checkinsFor(athleteId);
+  if(!ci.length) return null;
+  const last = ci[ci.length-1];
+  if(!last.painAreas) return null;
+  const entries = Object.entries(last.painAreas).filter(([k,v])=>v>=3);
+  if(!entries.length) return null;
+  return entries.map(([k])=>ZONE_LABELS[k]||k).join(', ');
+}
+function athleteMetrics(athleteId){
+  const acute = loadInWindow(athleteId,7);
+  const chronic = loadInWindow(athleteId,28);
+  const chronicAvgWeekly = (chronic.total/28)*7;
+  const acwr = chronicAvgWeekly>0 ? +(acute.total/chronicAvgWeekly).toFixed(2) : (acute.total>0?2:0);
+  const sd = stdDev(acute.vals);
+  const mean7 = acute.total/7;
+  const monotony = sd>0 ? +(mean7/sd).toFixed(2) : (mean7>0?3:0);
+  const strain = Math.round(acute.total*monotony);
+  const ci = checkinsFor(athleteId);
+  const lastCheckin = ci.length ? ci[ci.length-1] : null;
+  const wellnessScore = lastCheckin ? (lastCheckin.sleep+lastCheckin.fatigue+lastCheckin.soreness+lastCheckin.stress+lastCheckin.mood) : null;
+  const hasData = acute.total>0 || chronic.total>0 || lastCheckin;
+  const sleepLow = sleepStreakLow(athleteId);
+  const pain = strongPainToday(athleteId);
+
+  const reasons = [];
+  if(acwr>1.5) reasons.push(`ACWR ${acwr} (carga a subir depressa)`);
+  else if(acwr<0.8 && acute.total>0) reasons.push(`ACWR ${acwr} (carga muito abaixo do habitual)`);
+  if(monotony>2) reasons.push(`Monotonia ${monotony} (pouca variação de carga)`);
+  if(wellnessScore!==null && wellnessScore<=10) reasons.push(`Bem-estar baixo (${wellnessScore}/25)`);
+  if(sleepLow) reasons.push('Sono fraco 3 dias seguidos');
+  if(pain) reasons.push(`Dor forte reportada: ${pain}`);
+
+  let flag='ok', flagLabel='Sem dados suficientes';
+  if(hasData){
+    if(acwr>1.5 || monotony>2 || sleepLow || pain || (wellnessScore!==null && wellnessScore<=10)){
+      flag='risk'; flagLabel='Risco elevado';
+    } else if(acwr>1.3 || (acwr<0.8 && acute.total>0) || (wellnessScore!==null && wellnessScore<=15)){
+      flag='watch'; flagLabel='A acompanhar';
+      if(!reasons.length) reasons.push(`ACWR ${acwr}` + (wellnessScore!==null?` · bem-estar ${wellnessScore}/25`:''));
+    } else {
+      flag='ok'; flagLabel='Dentro do esperado';
+    }
+  }
+  return {acuteLoad:acute.total, chronicWeekly:Math.round(chronicAvgWeekly), acwr, monotony, strain,
+    wellnessScore, flag, flagLabel, reasonText:reasons.join(' · '), hasPainNow: !!pain};
+}
+const flagColor = {ok:'var(--ok)', watch:'var(--amber)', risk:'var(--coral)'};
+
+/* ================= ALERTAS ================= */
+function requestNotifyPermission(){
+  try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){}
+}
+function tryNotify(name, reason){
+  try{
+    if('Notification' in window && Notification.permission==='granted'){
+      new Notification('Alerta de risco: '+name, {body:reason});
+    }
+  }catch(e){}
+}
+async function checkAndLogAlerts(){
+  if(!sb) return;
+  for(const a of db.athletes){
+    const m = athleteMetrics(a.id);
+    if(m.flag==='risk'){
+      const date = todayStr();
+      const existing = db.alerts.find(al=>al.athleteId===a.id && al.date===date);
+      if(!existing){
+        tryNotify(a.name, m.reasonText);
+        await sb.from('alerts').insert({athlete_id:a.id, date, reason:m.reasonText, read:false});
+      } else if(existing.reason !== m.reasonText){
+        await sb.from('alerts').update({reason:m.reasonText}).eq('id', existing.id);
+      }
+    }
+  }
+  await refreshAlerts();
+}
+function updateAlertBadge(){
+  const n = db.alerts.filter(a=>!a.read).length;
+  const badge = document.getElementById('bellBadge');
+  if(!badge) return;
+  badge.textContent = n>9?'9+':n;
+  badge.classList.toggle('hidden', n===0);
+}
+async function markAlertRead(id){
+  if(!sb) return;
+  await sb.from('alerts').update({read:true}).eq('id', id);
+  await refreshAlerts(); renderAlerts(); updateAlertBadge();
+}
+async function markAllAlertsRead(){
+  if(!sb) return;
+  const ids = db.alerts.filter(a=>!a.read).map(a=>a.id);
+  if(ids.length) await sb.from('alerts').update({read:true}).in('id', ids);
+  await refreshAlerts(); renderAlerts(); updateAlertBadge();
+}
+function renderAlerts(){
+  const wrap = document.getElementById('alertsWrap');
+  const list = [...db.alerts].sort((a,b)=> b.date.localeCompare(a.date));
+  if(!list.length){ wrap.innerHTML = '<div class="empty">Sem alertas registados. Quando um atleta entrar em risco elevado, aparece aqui.</div>'; return; }
+  const unread = list.some(a=>!a.read);
+  wrap.innerHTML = (unread ? `<button class="btn-sec" style="margin-bottom:14px;" onclick="markAllAlertsRead()">Marcar tudo como visto</button>` : '') +
+    list.map(al=>{
+      const a = db.athletes.find(x=>x.id===al.athleteId);
+      return `<div class="alert-item ${al.read?'read':''}">
+        <div class="a-top"><span class="a-name">${escapeHtml(a?a.name:'Atleta removido')}</span><span class="a-date">${al.date}</span></div>
+        <div class="a-reason">${escapeHtml(al.reason||'Risco elevado detetado')}</div>
+        <div class="a-actions">${al.read? '' : `<button class="btn-sec" onclick="markAlertRead('${al.id}')">Marcar como visto</button>`}</div>
+      </div>`;
+    }).join('');
+}
+
+/* ================= STAFF: VISÃO GERAL ================= */
+function renderOverview(){
+  checkAndLogAlerts(); updateAlertBadge();
+  const kwrap = document.getElementById('overviewKpis');
+  const total = db.athletes.length;
+  let risk=0, watch=0, noData=0;
+  db.athletes.forEach(a=>{ const m=athleteMetrics(a.id); if(m.flag==='risk')risk++; else if(m.flag==='watch')watch++; if(m.flagLabel==='Sem dados suficientes')noData++; });
+  kwrap.innerHTML = `
+    <div class="kpi"><div class="num">${total}</div><div class="lbl">Atletas no plantel</div></div>
+    <div class="kpi"><div class="num" style="color:var(--coral)">${risk}</div><div class="lbl">Em risco elevado</div></div>
+    <div class="kpi"><div class="num" style="color:var(--amber)">${watch}</div><div class="lbl">A acompanhar</div></div>
+    <div class="kpi"><div class="num">${noData}</div><div class="lbl">Sem registos ainda</div></div>
+  `;
+  const cwrap = document.getElementById('athleteCards');
+  if(!db.athletes.length){ cwrap.innerHTML = '<div class="empty">Ainda não há atletas. Adiciona o plantel em "Atletas".</div>'; return; }
+  cwrap.innerHTML = db.athletes.map(a=>{
+    const m = athleteMetrics(a.id);
+    return `<div class="card athlete-card" style="--flag:${flagColor[m.flag]}" onclick="openAthlete('${a.id}')">
+      <h3>${escapeHtml(a.name)} ${m.hasPainNow?'<span class="pain-dot" title="Dor reportada"></span>':''}</h3>
+      <div class="pos">${escapeHtml(a.pos||'Sem posição')}</div>
+      <div class="stat-row"><span>Carga esta semana</span><span class="num">${m.acuteLoad}</span></div>
+      <div class="stat-row"><span>Carga vs. habitual</span><span class="num">${m.acwr||'—'}</span></div>
+      <div class="stat-row"><span>Bem-estar hoje</span><span class="num">${m.wellnessScore!==null?m.wellnessScore+'/25':'—'}</span></div>
+      <span class="flag-label" style="--flag:${flagColor[m.flag]}">${m.flagLabel}</span>
+      ${m.reasonText?`<div class="flag-reason">${escapeHtml(m.reasonText)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+/* ================= STAFF: ATLETAS ================= */
+function genPin(){ return String(Math.floor(1000 + Math.random()*9000)); }
+async function addAthlete(){
+  const name = document.getElementById('newAthName').value.trim();
+  const pos = document.getElementById('newAthPos').value.trim();
+  if(!name || !sb) return;
+  try{
+    const pin = genPin();
+    const {error} = await sb.from('athletes').insert({name, pos, pin});
+    if(error) throw error;
+    document.getElementById('newAthName').value=''; document.getElementById('newAthPos').value='';
+    await refreshAthletes(); renderAthletesTable(); renderOverview();
+  }catch(e){ alert('Erro ao adicionar atleta: '+(e.message||e)); }
+}
+async function regenPin(id){
+  if(!sb) return;
+  if(!confirm('Gerar um novo PIN para este atleta? O PIN antigo deixa de funcionar.')) return;
+  const pin = genPin();
+  const {error} = await sb.from('athletes').update({pin}).eq('id', id);
+  if(error){ alert('Erro ao gerar PIN: '+error.message); return; }
+  await refreshAthletes();
+  if(currentAthleteId===id) openAthlete(id, true); else renderAthletesTable();
+}
+async function removeAthlete(id){
+  if(!confirm('Remover este atleta e todos os seus registos?')) return;
+  if(!sb) return;
+  await Promise.all([
+    sb.from('checkins').delete().eq('athlete_id', id),
+    sb.from('sessions').delete().eq('athlete_id', id),
+    sb.from('alerts').delete().eq('athlete_id', id),
+  ]);
+  await sb.from('athletes').delete().eq('id', id);
+  if(currentAthleteId===id){ currentAthleteId=null; switchSection('athletes'); }
+  await Promise.all([refreshAthletes(), refreshCheckins(), refreshSessions(), refreshAlerts()]);
+  renderAthletesTable(); renderOverview();
+}
+function renderAthletesTable(){
+  const tbody = document.querySelector('#athletesTable tbody');
+  if(!db.athletes.length){ tbody.innerHTML = '<tr><td colspan="5" class="empty">Sem atletas ainda</td></tr>'; return; }
+  tbody.innerHTML = db.athletes.map(a=>{
+    const m = athleteMetrics(a.id);
+    return `<tr>
+      <td onclick="openAthlete('${a.id}')" style="cursor:pointer;font-weight:600;">${escapeHtml(a.name)}</td>
+      <td>${escapeHtml(a.pos||'—')}</td>
+      <td style="font-family:var(--font-head);letter-spacing:.05em;">${a.pin||'—'} <button class="btn-sec" style="padding:3px 8px;font-size:11px;margin-left:4px;" onclick="regenPin('${a.id}')">Novo</button></td>
+      <td style="color:${flagColor[m.flag]}">${m.acwr||'—'}</td>
+      <td><button class="btn-sec btn-danger" onclick="removeAthlete('${a.id}')">Remover</button></td>
+    </tr>`;
+  }).join('');
+}
+function openAthlete(id, isRefresh){
+  currentAthleteId = id;
+  if(!isRefresh){
+    currentSection = 'athletes';
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.sec==='athletes'));
+    document.getElementById('sec-athletes').classList.add('active');
+  }
+  document.getElementById('athletesList').classList.add('hidden');
+  const wrap = document.getElementById('athleteDetail');
+  wrap.classList.remove('hidden');
+  const a = db.athletes.find(x=>x.id===id);
+  if(!a) return;
+  const m = athleteMetrics(id);
+  const ci = checkinsFor(id);
+  const lastPain = ci.length ? Object.entries(ci[ci.length-1].painAreas||{}) : [];
+  const athAlerts = db.alerts.filter(al=>al.athleteId===id).sort((x,y)=>y.date.localeCompare(x.date)).slice(0,8);
+  wrap.innerHTML = `
+    <button class="back-link" onclick="switchSection('athletes')">&larr; Voltar aos atletas</button>
+    <div class="section-head"><div><h2>${escapeHtml(a.name)}</h2><p>${escapeHtml(a.pos||'')}</p></div>
+      <span class="flag-label" style="--flag:${flagColor[m.flag]}">${m.flagLabel}</span></div>
+    ${m.reasonText?`<div class="flag-reason" style="margin-bottom:14px;">${escapeHtml(m.reasonText)}</div>`:''}
+    <div class="kpis">
+      <div class="kpi"><div class="num">${m.acuteLoad}</div><div class="lbl">Carga desta semana</div></div>
+      <div class="kpi"><div class="num">${m.chronicWeekly}</div><div class="lbl">Carga média (últimas 4 semanas)</div></div>
+      <div class="kpi"><div class="num">${m.acwr||'—'}</div><div class="lbl">Carga atual vs. habitual (ideal 0,8–1,3)</div></div>
+      <div class="kpi"><div class="num">${m.monotony||'—'}</div><div class="lbl">Repetição da carga (menos variação = maior risco)</div></div>
+    </div>
+    <div class="chart-box"><h3>Carga diária — últimos 14 dias</h3><canvas id="detCatChart"></canvas></div>
+    <div class="chart-box"><h3>Bem-estar diário (quanto mais alto, melhor)</h3><canvas id="detWellChart"></canvas></div>
+    ${lastPain.length?`<div class="chart-box"><h3>Dor reportada — último questionário</h3>
+      ${lastPain.map(([z,v])=>`<div class="pain-chip"><span>${ZONE_LABELS[z]||z}</span><span>${'●'.repeat(v)}${'○'.repeat(3-v)}</span></div>`).join('')}
+    </div>`:''}
+    <div class="chart-box"><h3>Historial de alertas</h3>
+      ${athAlerts.length ? athAlerts.map(al=>`<div class="alert-item ${al.read?'read':''}" style="border-left-color:${al.read?'var(--ink-faint)':'var(--coral)'}">
+        <div class="a-top"><span class="a-date">${al.date}</span></div><div class="a-reason">${escapeHtml(al.reason)}</div>
+      </div>`).join('') : '<div class="empty">Sem alertas registados para este atleta.</div>'}
+    </div>
+  `;
+  drawCategoryChart('detCatChart', id, 14);
+  drawWellChart('detWellChart', id);
+}
+
+/* ================= GRÁFICOS ================= */
+function destroyChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+function lastNDates(n){
+  const arr=[]; const now=new Date();
+  for(let i=n-1;i>=0;i--){ const d=new Date(now); d.setDate(d.getDate()-i); arr.push(d.toISOString().slice(0,10)); }
+  return arr;
+}
+function drawCategoryChart(canvasId, athleteId, days){
+  const ctx = document.getElementById(canvasId); if(!ctx) return;
+  destroyChart(canvasId);
+  const map = dailyLoadMap(athleteId);
+  const dates = lastNDates(days);
+  charts[canvasId] = new Chart(ctx, {
+    type:'bar',
+    data:{ labels:dates.map(d=>d.slice(5)), datasets:[{label:'Carga de treino', data:dates.map(d=>map[d]||0), backgroundColor:'#4FA6A0'}] },
+    options:{ responsive:true, plugins:{legend:{display:false}},
+      scales:{ x:{ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:7}}, y:{beginAtZero:true} } }
+  });
+}
+function drawWellChart(canvasId, athleteId){
+  const ctx = document.getElementById(canvasId); if(!ctx) return;
+  destroyChart(canvasId);
+  const rows = checkinsFor(athleteId).slice(-21);
+  const labels = rows.map(r=>r.date.slice(5));
+  const vals = rows.map(r=>r.sleep+r.fatigue+r.soreness+r.stress+r.mood);
+  charts[canvasId] = new Chart(ctx, {
+    type:'line',
+    data:{ labels, datasets:[{label:'Bem-estar', data:vals, borderColor:'#E8A33D', backgroundColor:'rgba(232,163,61,.15)', fill:true, tension:.3}] },
+    options:{ responsive:true, plugins:{legend:{display:false}}, scales:{ y:{min:5, max:25} } }
+  });
+}
+
+/* ================= STAFF: PLANEAMENTO ================= */
+function populatePlanScopeSelect(){
+  const sel = document.getElementById('planScopeSelect');
+  const current = sel.value || 'team';
+  sel.innerHTML = '<option value="team">Equipa (todos)</option>' +
+    db.athletes.map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+  sel.value = db.athletes.find(a=>a.id===current) ? current : 'team';
+  planScope = sel.value;
+}
+function changePlanScope(v){ planScope = v; renderPlanning(); }
+function defaultDays(){ return ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>({dia:d, categoria:'Físico', duracao:75})); }
+function teamPlan(){
+  const key = isoWeekKey();
+  if(!db.plan[key]) db.plan[key] = defaultDays();
+  return db.plan[key];
+}
+function currentPlanDays(){
+  const key = isoWeekKey();
+  if(planScope==='team') return teamPlan();
+  if(!db.planIndividual[key]) db.planIndividual[key] = {};
+  if(!db.planIndividual[key][planScope]){
+    db.planIndividual[key][planScope] = teamPlan().map(d=>({...d}));
+  }
+  return db.planIndividual[key][planScope];
+}
+function hasIndividualOverride(){
+  const key = isoWeekKey();
+  return planScope!=='team' && db.planIndividual[key] && db.planIndividual[key][planScope];
+}
+async function persistPlan(){
+  if(!sb) return;
+  const key = isoWeekKey();
+  await sb.from('plans').upsert({week_key:key, team: db.plan[key] || defaultDays(), individual: db.planIndividual[key] || {}});
+}
+async function removeIndividualPlan(){
+  const key = isoWeekKey();
+  if(db.planIndividual[key]) delete db.planIndividual[key][planScope];
+  renderPlanning();
+  await persistPlan();
+}
+function renderPlanning(){
+  populatePlanScopeSelect();
+  document.getElementById('planScopeSelect').value = planScope;
+  const days = currentPlanDays();
+  const wrap = document.getElementById('planDays');
+  wrap.innerHTML = days.map((d,i)=>{
+    const rpe = CATEGORY_RPE[d.categoria] ?? 5;
+    const load = rpe*d.duracao;
+    return `<div class="plan-day">
+      <div>${d.dia}</div>
+      <select onchange="updatePlan(${i},'categoria',this.value)">${PLAN_CATS.map(c=>`<option ${c===d.categoria?'selected':''}>${c}</option>`).join('')}</select>
+      <input type="number" min="0" value="${d.duracao}" onchange="updatePlan(${i},'duracao',this.value)">
+      <div style="color:var(--ink-faint)">RPE ${rpe}</div>
+      <div class="num">${load}</div>
+    </div>`;
+  }).join('');
+  const custom = document.getElementById('customBadge');
+  const removeBtn = document.getElementById('removeCustomBtn');
+  const showCustom = hasIndividualOverride();
+  custom.classList.toggle('hidden', !showCustom);
+  removeBtn.classList.toggle('hidden', !showCustom);
+  const athName = planScope!=='team' ? (db.athletes.find(a=>a.id===planScope)||{}).name : null;
+  document.getElementById('planChartTitle').textContent = athName
+    ? `Carga planeada vs. carga real — ${athName}`
+    : 'Carga planeada vs. carga real média — esta semana';
+  drawPlanChart();
+}
+async function updatePlan(i, field, value){
+  const days = currentPlanDays();
+  days[i][field] = field==='duracao' ? (+value||0) : value;
+  renderPlanning();
+  await persistPlan();
+}
+function savePlan(){ alert('Plano guardado — cada alteração é sincronizada automaticamente.'); }
+function drawPlanChart(){
+  const days = currentPlanDays();
+  const plannedLoads = days.map(d=>(CATEGORY_RPE[d.categoria]??5)*d.duracao);
+  const now = new Date();
+  const dayIdx = (now.getDay()+6)%7;
+  const weekDates = [];
+  for(let i=0;i<7;i++){ const d=new Date(now); d.setDate(d.getDate()-dayIdx+i); weekDates.push(d.toISOString().slice(0,10)); }
+  let actual;
+  if(planScope==='team'){
+    actual = weekDates.map(date=>{
+      if(!db.athletes.length) return 0;
+      let sum=0; db.athletes.forEach(a=>{ sum += (dailyLoadMap(a.id)[date]||0); });
+      return Math.round(sum/db.athletes.length);
+    });
+  } else {
+    const map = dailyLoadMap(planScope);
+    actual = weekDates.map(date=> map[date]||0);
+  }
+  destroyChart('planChart');
+  const ctx = document.getElementById('planChart');
+  charts.planChart = new Chart(ctx, {
+    type:'line',
+    data:{ labels:['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'], datasets:[
+      {label:'Planeado', data:plannedLoads, borderColor:'#E8A33D', backgroundColor:'transparent', borderDash:[5,4], tension:.25},
+      {label:planScope==='team'?'Real (média do plantel)':'Real', data:actual, borderColor:'#4FA6A0', backgroundColor:'rgba(79,166,160,.15)', fill:true, tension:.25}
+    ]},
+    options:{ responsive:true, scales:{y:{beginAtZero:true}} }
+  });
+}
+
+/* ================= MAPA CORPORAL (DOR LOCALIZADA) ================= */
+const ZONES = [
+  {id:'cabeca', cx:80, cy:22, r:16},
+  {id:'ombro_e', cx:48, cy:62, r:12},
+  {id:'ombro_d', cx:112, cy:62, r:12},
+  {id:'peito', cx:80, cy:95, r:24},
+  {id:'anca', cx:80, cy:150, r:18},
+  {id:'coxa_e', cx:55, cy:188, r:15},
+  {id:'coxa_d', cx:105, cy:188, r:15},
+  {id:'joelho_e', cx:55, cy:228, r:11},
+  {id:'joelho_d', cx:105, cy:228, r:11},
+  {id:'gemeo_e', cx:55, cy:266, r:12},
+  {id:'gemeo_d', cx:105, cy:266, r:12},
+  {id:'tornozelo_e', cx:55, cy:300, r:9},
+  {id:'tornozelo_d', cx:105, cy:300, r:9},
+];
+const INTENSITY_COLORS = ['var(--surface-2)', 'rgba(232,163,61,.55)', 'var(--amber)', 'var(--coral)'];
+let painValues = {};
+function cyclePain(zoneId){
+  painValues[zoneId] = ((painValues[zoneId]||0)+1)%4;
+  renderBodyMap();
+}
+function removePain(zoneId){ delete painValues[zoneId]; renderBodyMap(); }
+function renderBodyMap(){
+  const svgZones = ZONES.map(z=>`<circle data-z="${z.id}" cx="${z.cx}" cy="${z.cy}" r="${z.r}" fill="${INTENSITY_COLORS[painValues[z.id]||0]}" onclick="cyclePain('${z.id}')"></circle>`).join('');
+  const svg = `<svg viewBox="0 0 160 320" width="150" height="300" xmlns="http://www.w3.org/2000/svg">${svgZones}</svg>`;
+  const entries = Object.entries(painValues).filter(([k,v])=>v>0);
+  const list = entries.length ? entries.map(([z,v])=>`<div class="pain-chip"><span>${ZONE_LABELS[z]||z} ${'●'.repeat(v)}${'○'.repeat(3-v)}</span><button onclick="removePain('${z}')">✕</button></div>`).join('')
+    : '<div class="empty" style="padding:6px 0;font-size:12px;">Nenhuma zona selecionada</div>';
+  const lombarLevel = painValues.lombar||0;
+  const wrap = document.getElementById('bodyMapWrap');
+  if(!wrap) return;
+  wrap.innerHTML = `<div class="bodymap-wrap">
+      <div>${svg}<div class="pain-legend"><span><i style="background:${INTENSITY_COLORS[1]}"></i>Ligeira</span><span><i style="background:${INTENSITY_COLORS[2]}"></i>Moderada</span><span><i style="background:${INTENSITY_COLORS[3]}"></i>Forte</span></div>
+      <button type="button" class="lombar-pill" style="background:${INTENSITY_COLORS[lombarLevel]}" onclick="cyclePain('lombar')">Zona lombar/costas ${lombarLevel?('●'.repeat(lombarLevel)):''}</button></div>
+      <div class="pain-list">${list}</div>
+    </div>`;
+}
+
+/* ================= ATLETA: CHECK-IN ================= */
+const CHECKIN_FIELDS = [
+  {key:'sleep', label:'Qualidade do sono', lo:'Muito má', hi:'Excelente'},
+  {key:'fatigue', label:'Nível de fadiga', lo:'Exausto', hi:'Muito repousado'},
+  {key:'soreness', label:'Dor muscular geral', lo:'Muita dor', hi:'Sem dor'},
+  {key:'stress', label:'Stress geral', lo:'Muito stressado', hi:'Muito calmo'},
+  {key:'mood', label:'Humor', lo:'Muito mau', hi:'Muito bom'},
+];
+let checkinValues = {};
+function renderCheckin(){
+  document.getElementById('checkinDateLabel').textContent = new Date().toLocaleDateString('pt-PT',{weekday:'long', day:'numeric', month:'long'});
+  const existing = checkinsFor(session.athleteId).find(c=>c.date===todayStr());
+  checkinValues = existing ? {sleep:existing.sleep,fatigue:existing.fatigue,soreness:existing.soreness,stress:existing.stress,mood:existing.mood} : {sleep:3,fatigue:3,soreness:3,stress:3,mood:3};
+  painValues = existing && existing.painAreas ? {...existing.painAreas} : {};
+  const form = document.getElementById('checkinForm');
+  form.innerHTML = CHECKIN_FIELDS.map(f=>`
+    <div class="field">
+      <label>${f.label}</label>
+      <div class="scale" id="scale-${f.key}">
+        ${[1,2,3,4,5].map(v=>`<button type="button" class="${checkinValues[f.key]===v?'sel':''}" onclick="setCheckin('${f.key}',${v})">${v}</button>`).join('')}
+      </div>
+      <div class="scale-labels"><span>${f.lo}</span><span>${f.hi}</span></div>
+    </div>`).join('') +
+    `<div class="field"><label>Dor localizada (opcional) — toca numa zona para marcar intensidade</label><div id="bodyMapWrap"></div></div>` +
+    `<button class="btn-primary" style="margin-top:6px;" onclick="submitCheckin()">${existing?'Atualizar':'Guardar'} questionário de hoje</button>`;
+  renderBodyMap();
+}
+function setCheckin(key,val){
+  checkinValues[key]=val;
+  document.querySelectorAll(`#scale-${key} button`).forEach((b,i)=>b.classList.toggle('sel', i+1===val));
+}
+async function submitCheckin(){
+  if(!sb || !session.athleteId) return;
+  const date = todayStr();
+  const painAreas = Object.fromEntries(Object.entries(painValues).filter(([k,v])=>v>0));
+  await sb.from('checkins').upsert({
+    id: session.athleteId+'_'+date, athlete_id:session.athleteId, date,
+    sleep:checkinValues.sleep, fatigue:checkinValues.fatigue, soreness:checkinValues.soreness,
+    stress:checkinValues.stress, mood:checkinValues.mood, pain_areas:painAreas
+  });
+  await refreshCheckins();
+  renderCheckin();
+  renderMyHistory();
+  alert('Questionário guardado. Obrigado!');
+}
+
+/* ================= ATLETA: RPE ================= */
+let rpeValue = null;
+function renderRpeScale(){
+  const wrap = document.getElementById('rpeScale');
+  wrap.innerHTML = Array.from({length:11},(_,v)=>`<button type="button" onclick="setRpe(${v})">${v}</button>`).join('');
+}
+function setRpe(v){
+  rpeValue = v;
+  document.querySelectorAll('#rpeScale button').forEach((b,i)=>b.classList.toggle('sel', i===v));
+}
+async function submitRpe(){
+  if(!sb || !session.athleteId) return;
+  const duration = +document.getElementById('sessDuration').value;
+  if(!duration || rpeValue===null){ alert('Indica a duração e seleciona o RPE.'); return; }
+  try{
+    const {error} = await sb.from('sessions').insert({athlete_id:session.athleteId, date:todayStr(), category:'Treino', duration, rpe:rpeValue, load:duration*rpeValue});
+    if(error) throw error;
+    await refreshSessions();
+    document.getElementById('sessDuration').value='';
+    rpeValue=null; renderRpeScale();
+    alert('Sessão registada.');
+    renderMyHistory();
+  }catch(e){ alert('Erro ao registar a sessão: '+(e.message||e)); }
+}
+
+/* ================= ATLETA: HISTORIAL ================= */
+function renderMyHistory(){
+  if(!session.athleteId) return;
+  drawCategoryChart('myLoadChart', session.athleteId, 21);
+  drawWellChart('myWellChart', session.athleteId);
+}
+
+/* ================= INIT ================= */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+initCloud();
+</script>
+</body>
+</html>
