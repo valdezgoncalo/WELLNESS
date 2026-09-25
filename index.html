@@ -249,6 +249,7 @@ canvas{max-height:220px;}
         <div><div class="club-name" id="clubNameTop"></div><div class="who" id="whoTop"></div></div>
       </div>
       <div class="topbar-right">
+        <span class="badge-custom hidden" id="queueBadge" title="Registos guardados neste dispositivo, à espera de ligação">0 por enviar</span>
         <button class="bell-btn hidden" id="bellBtn" onclick="switchSection('alerts')">&#128276;<span class="bell-badge hidden" id="bellBadge">0</span></button>
         <button class="exit" onclick="exitApp()">Trocar utilizador</button>
       </div>
@@ -342,8 +343,9 @@ canvas{max-height:220px;}
             <div class="rpe-scale" id="rpeScale"></div>
             <div class="scale-labels"><span>0 · muito leve</span><span>10 · máximo</span></div>
           </div>
-          <button class="btn-primary" style="margin-top:16px;" onclick="submitRpe()">Guardar sessão</button>
+          <button class="btn-primary" id="rpeSubmitBtn" style="margin-top:16px;" onclick="submitRpe()">Guardar sessão</button>
         </div>
+        <div id="lastSessionWrap" style="max-width:520px; margin-top:14px;"></div>
       </section>
 
       <!-- ATLETA: HISTORIAL -->
@@ -388,6 +390,8 @@ async function initCloud(){
     cloudReady = true;
     refreshGate();
     subscribeRealtime();
+    updateQueueBadge();
+    flushQueue();
   }catch(e){
     cloudUnavailable = true;
     document.getElementById('gateSub').textContent = 'Não foi possível ligar ao Supabase. Confirma o URL, a chave e se correste o schema.sql. Detalhe: '+(e.message||e);
@@ -437,6 +441,56 @@ function rerenderAfterSync(){
   if(currentSection) renderSection(currentSection);
   if(session.role==='staff') updateAlertBadge();
 }
+/* ================= FILA OFFLINE =================
+   Só isto usa localStorage — não são "os dados", são só registos que
+   ficaram por enviar por falta de ligação, até serem sincronizados. */
+const QUEUE_KEY = 'wellnessPendingQueue_v1';
+function loadQueue(){ try{ return JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]'); }catch(e){ return []; } }
+function saveQueueList(q){ try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }catch(e){} }
+function queueAdd(item){ const q=loadQueue(); q.push(item); saveQueueList(q); updateQueueBadge(); }
+function isOffline(){ return typeof navigator!=='undefined' && navigator.onLine===false; }
+function looksLikeNetworkError(e){
+  const msg = (e && (e.message||String(e))) || '';
+  return isOffline() || /fetch|network|Failed to fetch|NetworkError|Load failed/i.test(msg);
+}
+function updateQueueBadge(){
+  const n = loadQueue().length;
+  const badge = document.getElementById('queueBadge');
+  if(!badge) return;
+  badge.textContent = n+' por enviar';
+  badge.classList.toggle('hidden', n===0);
+}
+async function flushQueue(){
+  if(!sb) return;
+  const q = loadQueue();
+  if(!q.length) return;
+  const remaining = [];
+  let anySynced = false;
+  for(const item of q){
+    try{
+      if(item.type==='checkin'){
+        const {error} = await sb.from('checkins').upsert(item.payload);
+        if(error) throw error;
+      } else if(item.type==='session'){
+        const {error} = await sb.from('sessions').insert(item.payload);
+        if(error) throw error;
+      }
+      anySynced = true;
+    }catch(e){
+      if(looksLikeNetworkError(e)){ remaining.push(item); } // continua sem rede — mantém na fila
+      // erro "a sério" (não de rede): descarta em vez de tentar para sempre
+    }
+  }
+  saveQueueList(remaining);
+  updateQueueBadge();
+  if(anySynced){
+    await Promise.all([refreshCheckins(), refreshSessions()]);
+    if(currentSection && !document.getElementById('mainApp').classList.contains('hidden')) renderSection(currentSection);
+  }
+}
+window.addEventListener('online', flushQueue);
+setInterval(flushQueue, 20000);
+
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function isoWeekKey(d=new Date()){
   const date = new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
@@ -541,7 +595,7 @@ function enterApp(){
     document.getElementById('tabsStaff').classList.add('hidden');
     document.getElementById('bellBtn').classList.add('hidden');
     switchSection('checkin');
-    renderCheckin(); renderRpeScale(); renderMyHistory();
+    renderCheckin(); renderRpeScale(); renderMyHistory(); renderLastSession(); updateQueueBadge();
   }
 }
 function exitApp(){
@@ -641,28 +695,38 @@ function athleteMetrics(athleteId){
   const hasData = acute.total>0 || chronic.total>0 || lastCheckin;
   const sleepLow = sleepStreakLow(athleteId);
   const pain = strongPainToday(athleteId);
+  const MIN_LOAD_DAYS = 7;
+  const historyDays = new Set(sessionsFor(athleteId).map(s=>s.date)).size;
+  const insufficientLoadData = historyDays < MIN_LOAD_DAYS;
 
   const reasons = [];
-  if(acwr>1.5) reasons.push(`ACWR ${acwr} (carga a subir depressa)`);
-  else if(acwr<0.8 && acute.total>0) reasons.push(`ACWR ${acwr} (carga muito abaixo do habitual)`);
-  if(monotony>2) reasons.push(`Monotonia ${monotony} (pouca variação de carga)`);
+  if(!insufficientLoadData){
+    if(acwr>1.5) reasons.push(`ACWR ${acwr} (carga a subir depressa)`);
+    else if(acwr<0.8 && acute.total>0) reasons.push(`ACWR ${acwr} (carga muito abaixo do habitual)`);
+    if(monotony>2) reasons.push(`Monotonia ${monotony} (pouca variação de carga)`);
+  }
   if(wellnessScore!==null && wellnessScore<=10) reasons.push(`Bem-estar baixo (${wellnessScore}/25)`);
   if(sleepLow) reasons.push('Sono fraco 3 dias seguidos');
   if(pain) reasons.push(`Dor forte reportada: ${pain}`);
 
   let flag='ok', flagLabel='Sem dados suficientes';
   if(hasData){
-    if(acwr>1.5 || monotony>2 || sleepLow || pain || (wellnessScore!==null && wellnessScore<=10)){
+    const loadRisk = !insufficientLoadData && (acwr>1.5 || monotony>2);
+    const loadWatch = !insufficientLoadData && (acwr>1.3 || (acwr<0.8 && acute.total>0));
+    if(loadRisk || sleepLow || pain || (wellnessScore!==null && wellnessScore<=10)){
       flag='risk'; flagLabel='Risco elevado';
-    } else if(acwr>1.3 || (acwr<0.8 && acute.total>0) || (wellnessScore!==null && wellnessScore<=15)){
+    } else if(loadWatch || (wellnessScore!==null && wellnessScore<=15)){
       flag='watch'; flagLabel='A acompanhar';
       if(!reasons.length) reasons.push(`ACWR ${acwr}` + (wellnessScore!==null?` · bem-estar ${wellnessScore}/25`:''));
+    } else if(insufficientLoadData){
+      flag='ok'; flagLabel='A acumular dados';
     } else {
       flag='ok'; flagLabel='Dentro do esperado';
     }
   }
   return {acuteLoad:acute.total, chronicWeekly:Math.round(chronicAvgWeekly), acwr, monotony, strain,
-    wellnessScore, flag, flagLabel, reasonText:reasons.join(' · '), hasPainNow: !!pain};
+    wellnessScore, flag, flagLabel, reasonText:reasons.join(' · '), hasPainNow: !!pain,
+    insufficientLoadData, historyDays, MIN_LOAD_DAYS};
 }
 const flagColor = {ok:'var(--ok)', watch:'var(--amber)', risk:'var(--coral)'};
 
@@ -749,7 +813,7 @@ function renderOverview(){
       <h3>${escapeHtml(a.name)} ${m.hasPainNow?'<span class="pain-dot" title="Dor reportada"></span>':''}</h3>
       <div class="pos">${escapeHtml(a.pos||'Sem posição')}</div>
       <div class="stat-row"><span>Carga esta semana</span><span class="num">${m.acuteLoad}</span></div>
-      <div class="stat-row"><span>Carga vs. habitual</span><span class="num">${m.acwr||'—'}</span></div>
+      <div class="stat-row"><span>Carga vs. habitual</span><span class="num">${m.insufficientLoadData ? `a acumular (${m.historyDays}/${m.MIN_LOAD_DAYS}d)` : (m.acwr||'—')}</span></div>
       <div class="stat-row"><span>Bem-estar hoje</span><span class="num">${m.wellnessScore!==null?m.wellnessScore+'/25':'—'}</span></div>
       <span class="flag-label" style="--flag:${flagColor[m.flag]}">${m.flagLabel}</span>
       ${m.reasonText?`<div class="flag-reason">${escapeHtml(m.reasonText)}</div>`:''}
@@ -802,7 +866,7 @@ function renderAthletesTable(){
       <td onclick="openAthlete('${a.id}')" style="cursor:pointer;font-weight:600;">${escapeHtml(a.name)}</td>
       <td>${escapeHtml(a.pos||'—')}</td>
       <td style="font-family:var(--font-head);letter-spacing:.05em;">${a.pin||'—'} <button class="btn-sec" style="padding:3px 8px;font-size:11px;margin-left:4px;" onclick="regenPin('${a.id}')">Novo</button></td>
-      <td style="color:${flagColor[m.flag]}">${m.acwr||'—'}</td>
+      <td style="color:${flagColor[m.flag]}">${m.insufficientLoadData ? `${m.historyDays}/${m.MIN_LOAD_DAYS}d` : (m.acwr||'—')}</td>
       <td><button class="btn-sec btn-danger" onclick="removeAthlete('${a.id}')">Remover</button></td>
     </tr>`;
   }).join('');
@@ -832,8 +896,10 @@ function openAthlete(id, isRefresh){
     <div class="kpis">
       <div class="kpi"><div class="num">${m.acuteLoad}</div><div class="lbl">Carga desta semana</div></div>
       <div class="kpi"><div class="num">${m.chronicWeekly}</div><div class="lbl">Carga média (últimas 4 semanas)</div></div>
-      <div class="kpi"><div class="num">${m.acwr||'—'}</div><div class="lbl">Carga atual vs. habitual (ideal 0,8–1,3)</div></div>
-      <div class="kpi"><div class="num">${m.monotony||'—'}</div><div class="lbl">Repetição da carga (menos variação = maior risco)</div></div>
+      ${m.insufficientLoadData
+        ? `<div class="kpi" style="grid-column:span 2;"><div class="num" style="font-size:16px;">A acumular dados</div><div class="lbl">Faltam ${m.MIN_LOAD_DAYS - m.historyDays} dia(s) de registos para um cálculo fiável de carga atual vs. habitual e regularidade</div></div>`
+        : `<div class="kpi"><div class="num">${m.acwr||'—'}</div><div class="lbl">Carga atual vs. habitual (ideal 0,8–1,3)</div></div>
+      <div class="kpi"><div class="num">${m.monotony||'—'}</div><div class="lbl">Repetição da carga (menos variação = maior risco)</div></div>`}
     </div>
     <div class="chart-box"><h3>Carga diária — últimos 14 dias</h3><canvas id="detCatChart"></canvas></div>
     <div class="chart-box"><h3>Bem-estar diário (quanto mais alto, melhor)</h3><canvas id="detWellChart"></canvas></div>
@@ -858,7 +924,7 @@ function lastNDates(n){
   return arr;
 }
 function drawCategoryChart(canvasId, athleteId, days){
-  const ctx = document.getElementById(canvasId); if(!ctx) return;
+  const ctx = document.getElementById(canvasId); if(!ctx || typeof Chart==='undefined') return;
   destroyChart(canvasId);
   const map = dailyLoadMap(athleteId);
   const dates = lastNDates(days);
@@ -870,7 +936,7 @@ function drawCategoryChart(canvasId, athleteId, days){
   });
 }
 function drawWellChart(canvasId, athleteId){
-  const ctx = document.getElementById(canvasId); if(!ctx) return;
+  const ctx = document.getElementById(canvasId); if(!ctx || typeof Chart==='undefined') return;
   destroyChart(canvasId);
   const rows = checkinsFor(athleteId).slice(-21);
   const labels = rows.map(r=>r.date.slice(5));
@@ -1056,23 +1122,50 @@ function setCheckin(key,val){
   checkinValues[key]=val;
   document.querySelectorAll(`#scale-${key} button`).forEach((b,i)=>b.classList.toggle('sel', i+1===val));
 }
+function applyLocalCheckin(payload){
+  const mapped = {athleteId:payload.athlete_id, date:payload.date, sleep:payload.sleep, fatigue:payload.fatigue, soreness:payload.soreness, stress:payload.stress, mood:payload.mood, painAreas:payload.pain_areas||{}};
+  const idx = db.checkins.findIndex(c=>c.athleteId===mapped.athleteId && c.date===mapped.date);
+  if(idx>=0) db.checkins[idx]=mapped; else db.checkins.push(mapped);
+}
 async function submitCheckin(){
-  if(!sb || !session.athleteId) return;
+  if(!session.athleteId) return;
   const date = todayStr();
   const painAreas = Object.fromEntries(Object.entries(painValues).filter(([k,v])=>v>0));
-  await sb.from('checkins').upsert({
+  const payload = {
     id: session.athleteId+'_'+date, athlete_id:session.athleteId, date,
     sleep:checkinValues.sleep, fatigue:checkinValues.fatigue, soreness:checkinValues.soreness,
     stress:checkinValues.stress, mood:checkinValues.mood, pain_areas:painAreas
-  });
-  await refreshCheckins();
-  renderCheckin();
-  renderMyHistory();
-  alert('Questionário guardado. Obrigado!');
+  };
+  if(!sb || isOffline()){
+    queueAdd({type:'checkin', payload});
+    applyLocalCheckin(payload);
+    renderCheckin();
+    try{ renderMyHistory(); }catch(e){}
+    alert('Sem ligação — guardado neste telemóvel. Envia automaticamente assim que voltar a internet.');
+    return;
+  }
+  try{
+    const {error} = await sb.from('checkins').upsert(payload);
+    if(error) throw error;
+    await refreshCheckins();
+    renderCheckin();
+    try{ renderMyHistory(); }catch(e){ console.warn('Gráfico não pôde ser desenhado:', e); }
+    alert('Questionário guardado. Obrigado!');
+  }catch(e){
+    if(looksLikeNetworkError(e)){
+      queueAdd({type:'checkin', payload});
+      applyLocalCheckin(payload);
+      renderCheckin();
+      alert('Sem ligação — guardado neste telemóvel. Envia automaticamente assim que voltar a internet.');
+    } else {
+      alert('Erro ao guardar: '+(e.message||e));
+    }
+  }
 }
 
 /* ================= ATLETA: RPE ================= */
 let rpeValue = null;
+let editingSessionId = null;
 function renderRpeScale(){
   const wrap = document.getElementById('rpeScale');
   wrap.innerHTML = Array.from({length:11},(_,v)=>`<button type="button" onclick="setRpe(${v})">${v}</button>`).join('');
@@ -1081,19 +1174,110 @@ function setRpe(v){
   rpeValue = v;
   document.querySelectorAll('#rpeScale button').forEach((b,i)=>b.classList.toggle('sel', i===v));
 }
+function resetRpeForm(){
+  document.getElementById('sessDuration').value='';
+  rpeValue=null; renderRpeScale();
+  editingSessionId=null;
+  document.getElementById('rpeSubmitBtn').textContent='Guardar sessão';
+}
+function applyLocalSession(payload, tempId){
+  db.sessions.push({id:tempId, athleteId:payload.athlete_id, date:payload.date, category:payload.category, duration:payload.duration, rpe:payload.rpe, load:payload.load});
+}
 async function submitRpe(){
-  if(!sb || !session.athleteId) return;
+  if(!session.athleteId) return;
   const duration = +document.getElementById('sessDuration').value;
   if(!duration || rpeValue===null){ alert('Indica a duração e seleciona o RPE.'); return; }
+
+  if(editingSessionId){
+    if(!sb){ alert('Sem ligação — não é possível editar um registo já enviado agora. Tenta mais tarde.'); return; }
+    try{
+      const {error} = await sb.from('sessions').update({duration, rpe:rpeValue, load:duration*rpeValue}).eq('id', editingSessionId);
+      if(error) throw error;
+      await refreshSessions();
+      resetRpeForm();
+      alert('Sessão atualizada.');
+      renderLastSession();
+      try{ renderMyHistory(); }catch(e){}
+    }catch(e){ alert('Erro ao atualizar: '+(e.message||e)); }
+    return;
+  }
+
+  const payload = {athlete_id:session.athleteId, date:todayStr(), category:'Treino', duration, rpe:rpeValue, load:duration*rpeValue};
+  if(!sb || isOffline()){
+    const tempId = 'local_'+uid();
+    queueAdd({type:'session', payload, tempId});
+    applyLocalSession(payload, tempId);
+    resetRpeForm();
+    renderLastSession();
+    try{ renderMyHistory(); }catch(e){}
+    alert('Sem ligação — guardado neste telemóvel. Envia automaticamente assim que voltar a internet.');
+    return;
+  }
   try{
-    const {error} = await sb.from('sessions').insert({athlete_id:session.athleteId, date:todayStr(), category:'Treino', duration, rpe:rpeValue, load:duration*rpeValue});
+    const {error} = await sb.from('sessions').insert(payload);
     if(error) throw error;
     await refreshSessions();
-    document.getElementById('sessDuration').value='';
-    rpeValue=null; renderRpeScale();
+    resetRpeForm();
     alert('Sessão registada.');
-    renderMyHistory();
-  }catch(e){ alert('Erro ao registar a sessão: '+(e.message||e)); }
+  }catch(e){
+    if(looksLikeNetworkError(e)){
+      const tempId = 'local_'+uid();
+      queueAdd({type:'session', payload, tempId});
+      applyLocalSession(payload, tempId);
+      resetRpeForm();
+      alert('Sem ligação — guardado neste telemóvel. Envia automaticamente assim que voltar a internet.');
+    } else {
+      alert('Erro ao registar a sessão: '+(e.message||e));
+      return;
+    }
+  }
+  renderLastSession();
+  try{ renderMyHistory(); }catch(e){ console.warn('Gráfico não pôde ser desenhado:', e); }
+}
+function todaysSessions(athleteId){ return sessionsFor(athleteId).filter(s=>s.date===todayStr()); }
+function renderLastSession(){
+  const wrap = document.getElementById('lastSessionWrap');
+  if(!wrap || !session.athleteId) return;
+  const list = todaysSessions(session.athleteId);
+  if(!list.length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = '<div class="field"><label>Sessões de hoje</label>' +
+    list.map(s=>{
+      const pending = String(s.id).startsWith('local_');
+      return `<div class="pain-chip">
+        <span>${s.duration} min · RPE ${s.rpe} · carga ${s.load}${pending?' · <em>por enviar</em>':''}</span>
+        <span>
+          ${pending?'':`<button class="btn-sec" style="padding:3px 8px;font-size:11px;" onclick="editSession('${s.id}')">Editar</button>`}
+          <button class="btn-sec btn-danger" style="padding:3px 8px;font-size:11px;margin-left:4px;" onclick="deleteSession('${s.id}')">Apagar</button>
+        </span>
+      </div>`;
+    }).join('') + '</div>';
+}
+function editSession(id){
+  const s = db.sessions.find(x=>x.id===id);
+  if(!s) return;
+  editingSessionId = id;
+  document.getElementById('sessDuration').value = s.duration;
+  setRpe(s.rpe);
+  document.getElementById('rpeSubmitBtn').textContent = 'Guardar alterações';
+}
+async function deleteSession(id){
+  if(!confirm('Apagar este registo?')) return;
+  if(String(id).startsWith('local_')){
+    db.sessions = db.sessions.filter(s=>s.id!==id);
+    saveQueueList(loadQueue().filter(item => !(item.type==='session' && item.tempId===id)));
+    updateQueueBadge();
+    renderLastSession();
+    try{ renderMyHistory(); }catch(e){}
+    return;
+  }
+  if(!sb) return;
+  try{
+    const {error} = await sb.from('sessions').delete().eq('id', id);
+    if(error) throw error;
+    await refreshSessions();
+    renderLastSession();
+    try{ renderMyHistory(); }catch(e){}
+  }catch(e){ alert('Erro ao apagar: '+(e.message||e)); }
 }
 
 /* ================= ATLETA: HISTORIAL ================= */
